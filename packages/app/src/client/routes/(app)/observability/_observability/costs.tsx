@@ -8,6 +8,9 @@ import {
   useCostSummary,
   useDistinctTags,
 } from '@client/hooks/queries/useAnalytics';
+import { useCurrency } from '@client/hooks/ui/useCurrency';
+import { useExchangeRates } from '@client/hooks/queries/useExchangeRates';
+import { formatMicroDollarsWithCurrency } from '@client/lib/currency';
 import {
   emptyState,
   loadingSpinner,
@@ -72,12 +75,9 @@ const SEGMENT_COLORS = [
   '#f97316',
 ];
 
-function formatCost(microdollars: number): string {
-  const dollars = microdollars / 1_000_000;
-  return `$${dollars.toFixed(6)}`;
-}
-
 function RouteComponent() {
+  const { currency } = useCurrency();
+  const { data: rates } = useExchangeRates();
   const search = useSearch({ from: '/(app)/observability' });
   const [breakdownBy, setBreakdownBy] = useState<BreakdownBy>('input-output');
   const [selectedTagKeys, setSelectedTagKeys] = useState<string[]>([]);
@@ -140,6 +140,25 @@ function RouteComponent() {
     breakdownBy !== 'input-output'
   );
 
+  const segments = useMemo(() => {
+    if (breakdownBy === 'input-output' || !summaryData?.length) return null;
+    const total = summaryData.reduce(
+      (sum, item) => sum + Number(item.totalCost),
+      0
+    );
+    if (total === 0) return null;
+    const stripPrefix =
+      breakdownBy === 'tags' && selectedTagKeys.length === 1;
+    return summaryData.map((item, i) => ({
+      label: stripPrefix
+        ? item.groupKey.replace(/^[^:]+:/, '')
+        : item.groupKey,
+      cost: Number(item.totalCost),
+      percentage: (Number(item.totalCost) / total) * 100,
+      color: SEGMENT_COLORS[i % SEGMENT_COLORS.length],
+    }));
+  }, [breakdownBy, summaryData, selectedTagKeys]);
+
   if (isLoading) {
     return (
       <div className={loadingSpinner}>
@@ -172,32 +191,29 @@ function RouteComponent() {
   const outputPercentage =
     totalCostValue > 0 ? (outputCost / totalCostValue) * 100 : 0;
 
-  // Calculate segments for grouped breakdown
-  const segments = useMemo(() => {
-    if (breakdownBy === 'input-output' || !summaryData?.length) return null;
-    const total = summaryData.reduce(
-      (sum, item) => sum + Number(item.totalCost),
-      0
-    );
-    if (total === 0) return null;
-    const stripPrefix =
-      breakdownBy === 'tags' && selectedTagKeys.length === 1;
-    return summaryData.map((item, i) => ({
-      label: stripPrefix
-        ? item.groupKey.replace(/^[^:]+:/, '')
-        : item.groupKey,
-      cost: Number(item.totalCost),
-      percentage: (Number(item.totalCost) / total) * 100,
-      color: SEGMENT_COLORS[i % SEGMENT_COLORS.length],
-    }));
-  }, [breakdownBy, summaryData, selectedTagKeys]);
+  const inputCostFormatted = formatMicroDollarsWithCurrency(
+    inputCost,
+    currency,
+    rates,
+  );
+  const outputCostFormatted = formatMicroDollarsWithCurrency(
+    outputCost,
+    currency,
+    rates,
+  );
 
   return (
     <div className={costMetricsContainer}>
       {/* Hero: Total Cost */}
       <div className={costHero}>
         <span className={costHeroLabel}>Total Cost</span>
-        <p className={costHeroValue}>{totalCost?.totalCostFormatted}</p>
+        <p className={costHeroValue}>
+          {formatMicroDollarsWithCurrency(
+            Number(totalCost?.totalCost ?? 0),
+            currency,
+            rates,
+          )}
+        </p>
       </div>
 
       {/* Secondary metrics row */}
@@ -211,7 +227,11 @@ function RouteComponent() {
             Input
           </span>
           <p className={costMetricValue}>
-            {totalCost?.totalInputCostFormatted}
+            {formatMicroDollarsWithCurrency(
+              Number(totalCost?.totalInputCost ?? 0),
+              currency,
+              rates,
+            )}
           </p>
           <span className={costMetricSubvalue}>
             {totalCost?.totalPromptTokens.toLocaleString()} tokens
@@ -227,7 +247,11 @@ function RouteComponent() {
             Output
           </span>
           <p className={costMetricValue}>
-            {totalCost?.totalOutputCostFormatted}
+            {formatMicroDollarsWithCurrency(
+              Number(totalCost?.totalOutputCost ?? 0),
+              currency,
+              rates,
+            )}
           </p>
           <span className={costMetricSubvalue}>
             {totalCost?.totalCompletionTokens.toLocaleString()} tokens
@@ -237,7 +261,11 @@ function RouteComponent() {
         <div className={costMetricItem}>
           <span className={costMetricLabel}>Cache Savings</span>
           <p className={costMetricValue}>
-            {totalCost?.totalCacheSavingsFormatted ?? '$0.000000'}
+            {formatMicroDollarsWithCurrency(
+              Number(totalCost?.totalCacheSavings ?? 0),
+              currency,
+              rates,
+            )}
           </p>
           <span className={costMetricSubvalue}>
             {Number(totalCost?.totalCachedTokens ?? 0).toLocaleString()} cached
@@ -322,7 +350,7 @@ function RouteComponent() {
           <>
             <div
               className={costBreakdownBarWrapper}
-              title={`Input: ${totalCost?.totalInputCostFormatted} (${inputPercentage.toFixed(1)}%)\nOutput: ${totalCost?.totalOutputCostFormatted} (${outputPercentage.toFixed(1)}%)`}
+              title={`Input: ${inputCostFormatted} (${inputPercentage.toFixed(1)}%)\nOutput: ${outputCostFormatted} (${outputPercentage.toFixed(1)}%)`}
             >
               <div
                 style={{
@@ -332,7 +360,7 @@ function RouteComponent() {
                 }}
               >
                 <div
-                  title={`Input: ${totalCost?.totalInputCostFormatted} (${inputPercentage.toFixed(1)}%)`}
+                  title={`Input: ${inputCostFormatted} (${inputPercentage.toFixed(1)}%)`}
                   style={{
                     width: `${inputPercentage}%`,
                     height: '100%',
@@ -344,7 +372,7 @@ function RouteComponent() {
                   }}
                 />
                 <div
-                  title={`Output: ${totalCost?.totalOutputCostFormatted} (${outputPercentage.toFixed(1)}%)`}
+                  title={`Output: ${outputCostFormatted} (${outputPercentage.toFixed(1)}%)`}
                   style={{
                     width: `${outputPercentage}%`,
                     height: '100%',
@@ -363,8 +391,7 @@ function RouteComponent() {
                   className={`${costBreakdownDot} ${costBreakdownDotInput}`}
                 />
                 <span style={{ color: '#b4b4b4' }}>
-                  Input: {totalCost?.totalInputCostFormatted} (
-                  {inputPercentage.toFixed(0)}%)
+                  Input: {inputCostFormatted} ({inputPercentage.toFixed(0)}%)
                 </span>
               </div>
               <div className={costBreakdownLegendItem}>
@@ -372,8 +399,7 @@ function RouteComponent() {
                   className={`${costBreakdownDot} ${costBreakdownDotOutput}`}
                 />
                 <span style={{ color: '#b4b4b4' }}>
-                  Output: {totalCost?.totalOutputCostFormatted} (
-                  {outputPercentage.toFixed(0)}%)
+                  Output: {outputCostFormatted} ({outputPercentage.toFixed(0)}%)
                 </span>
               </div>
             </div>
@@ -391,7 +417,7 @@ function RouteComponent() {
                 {segments.map((seg, i) => (
                   <div
                     key={seg.label}
-                    title={`${seg.label}: ${formatCost(seg.cost)} (${seg.percentage.toFixed(1)}%)`}
+                    title={`${seg.label}: ${formatMicroDollarsWithCurrency(seg.cost, currency, rates)} (${seg.percentage.toFixed(1)}%)`}
                     style={{
                       width: `${seg.percentage}%`,
                       height: '100%',
@@ -419,7 +445,8 @@ function RouteComponent() {
                     style={{ backgroundColor: seg.color }}
                   />
                   <span style={{ color: '#b4b4b4' }}>
-                    {seg.label}: {formatCost(seg.cost)} (
+                    {seg.label}:{' '}
+                    {formatMicroDollarsWithCurrency(seg.cost, currency, rates)} (
                     {seg.percentage.toFixed(0)}%)
                   </span>
                 </div>

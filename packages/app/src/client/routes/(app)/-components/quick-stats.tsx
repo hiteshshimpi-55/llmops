@@ -1,5 +1,8 @@
 import { useMemo } from 'react';
 import { useRequestStats, useTotalCost } from '@client/hooks/queries/useAnalytics';
+import { useExchangeRates } from '@client/hooks/queries/useExchangeRates';
+import { useCurrency } from '@client/hooks/ui/useCurrency';
+import { formatMicroDollarsWithCurrency } from '@client/lib/currency';
 import * as styles from './quick-stats.css';
 import clsx from 'clsx';
 
@@ -13,6 +16,8 @@ function get24hDateRange() {
 }
 
 export function QuickStats() {
+  const { currency } = useCurrency();
+  const { data: rates } = useExchangeRates();
   const dateRange = useMemo(() => get24hDateRange(), []);
 
   const { data: stats, isLoading: statsLoading } = useRequestStats(dateRange);
@@ -74,7 +79,11 @@ export function QuickStats() {
 
         <div className={styles.quickStatItem}>
           <span className={styles.quickStatValue}>
-            {costs?.totalCostFormatted ?? '$0.00'}
+            {formatMicroDollarsWithCurrency(
+              Number(costs?.totalCost ?? 0),
+              currency,
+              rates,
+            )}
           </span>
           <span className={styles.quickStatLabel}>Total Cost</span>
         </div>

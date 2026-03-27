@@ -32,6 +32,7 @@ import { ObservabilityFilters } from './-components/observability-filters';
 import { useTileWidth } from '@client/hooks/ui/useTileWidth';
 import { useEffect } from 'react';
 import { TraceDetail } from './-components/trace-detail';
+import { CurrencySwitcher } from '@client/components/currency-switcher';
 
 export const Route = createFileRoute('/(app)/observability/_observability')({
   component: RouteComponent,
@@ -95,6 +96,7 @@ function RouteComponent() {
         </div>
         <div className={headerGroup}>
           <ObservabilityFilters />
+          <CurrencySwitcher />
           <DateRangePicker />
         </div>
       </Header>

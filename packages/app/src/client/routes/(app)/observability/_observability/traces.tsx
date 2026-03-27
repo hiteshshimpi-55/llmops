@@ -41,6 +41,9 @@ import {
 } from '../-components/observability.css';
 import { format } from 'date-fns';
 import clsx from 'clsx';
+import { useCurrency } from '@client/hooks/ui/useCurrency';
+import { useExchangeRates } from '@client/hooks/queries/useExchangeRates';
+import { formatMicroDollarsWithCurrency } from '@client/lib/currency';
 
 export const Route = createFileRoute(
   '/(app)/observability/_observability/traces'
@@ -73,21 +76,6 @@ const columnHelper = createColumnHelper<TraceRow>();
 
 const PAGE_SIZE = 20;
 
-const formatCost = (microDollars: number) => {
-  const dollars = microDollars / 1_000_000;
-  if (dollars === 0) return '$0.00';
-  if (dollars < 0.01) {
-    return `$${dollars.toFixed(4)}`;
-  }
-  return `$${dollars.toFixed(2)}`;
-};
-
-const formatCostFull = (microDollars: number) => {
-  const dollars = microDollars / 1_000_000;
-  if (dollars === 0) return '$0.000000';
-  return `$${dollars.toFixed(6)}`;
-};
-
 const formatDuration = (ms: number | null) => {
   if (ms === null) return '—';
   if (ms < 1000) return `${ms}ms`;
@@ -97,6 +85,8 @@ const formatDuration = (ms: number | null) => {
 const statusUnset = statusBadge;
 
 function RouteComponent() {
+  const { currency } = useCurrency();
+  const { data: rates } = useExchangeRates();
   const [offset, setOffset] = useState(0);
   const navigate = useNavigate();
   const search = useSearch({ from: '/(app)/observability' });
@@ -179,11 +169,19 @@ function RouteComponent() {
       }),
       columnHelper.accessor('totalCost', {
         header: 'Cost',
-        cell: (info) => (
-          <Tooltip content={formatCostFull(info.getValue())}>
-            <span className={timestampCell}>{formatCost(info.getValue())}</span>
-          </Tooltip>
-        ),
+        cell: (info) => {
+          const micro = info.getValue();
+          const formatted = formatMicroDollarsWithCurrency(
+            micro,
+            currency,
+            rates,
+          );
+          return (
+            <Tooltip content={formatted}>
+              <span className={timestampCell}>{formatted}</span>
+            </Tooltip>
+          );
+        },
       }),
       columnHelper.accessor('durationMs', {
         header: 'Duration',
@@ -194,7 +192,7 @@ function RouteComponent() {
         ),
       }),
     ],
-    []
+    [currency, rates]
   );
 
   const table = useReactTable({

@@ -7,6 +7,9 @@ import {
   useRequestStats,
   useCostSummary,
 } from '@client/hooks/queries/useAnalytics';
+import { useExchangeRates } from '@client/hooks/queries/useExchangeRates';
+import { useCurrency } from '@client/hooks/ui/useCurrency';
+import { formatMicroDollarsWithCurrency } from '@client/lib/currency';
 import {
   AreaChart,
   Area,
@@ -45,6 +48,8 @@ export const Route = createFileRoute(
 });
 
 function RouteComponent() {
+  const { currency } = useCurrency();
+  const { data: rates } = useExchangeRates();
   const search = useSearch({ from: '/(app)/observability' });
   const dateRange = {
     startDate: search.from ?? '',
@@ -95,6 +100,36 @@ function RouteComponent() {
   const { data: timeSeriesData, isLoading: isLoadingTimeSeries } =
     useCostSummary({ ...analyticsParams, groupBy });
 
+  const chartData = useMemo(() => {
+    if (!timeSeriesData) return [];
+
+    return timeSeriesData.map((item) => {
+      const date = new Date(item.groupKey);
+      let label: string;
+
+      if (groupBy === 'day') {
+        label = date.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+        });
+      } else {
+        label = date.toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          hour12: true,
+        });
+      }
+
+      return {
+        date: label,
+        cost: Number(item.totalCost) || 0,
+        requests: Number(item.requestCount) || 0,
+        tokens: Number(item.totalTokens) || 0,
+      };
+    });
+  }, [timeSeriesData, groupBy]);
+
   const isLoading = isLoadingCost || isLoadingStats || isLoadingTimeSeries;
 
   if (isLoading) {
@@ -131,52 +166,8 @@ function RouteComponent() {
     return isNaN(num) ? '0' : Math.round(num).toString();
   };
 
-  // Format time series data for charts
-  const chartData = useMemo(() => {
-    if (!timeSeriesData) return [];
-
-    return timeSeriesData.map((item) => {
-      const date = new Date(item.groupKey);
-      let label: string;
-
-      if (groupBy === 'day') {
-        label = date.toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric',
-        });
-      } else {
-        // Hour interval
-        label = date.toLocaleString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          hour: 'numeric',
-          hour12: true,
-        });
-      }
-
-      return {
-        date: label,
-        cost: Number(item.totalCost) || 0,
-        requests: Number(item.requestCount) || 0,
-        tokens: Number(item.totalTokens) || 0,
-      };
-    });
-  }, [timeSeriesData, groupBy]);
-
-  // Cost values are in microdollars (1/1,000,000 of a dollar)
-  const formatCost = (value: number) => {
-    const dollars = value / 1_000_000;
-    if (dollars >= 1000) {
-      return `$${(dollars / 1000).toFixed(1)}k`;
-    }
-    if (dollars >= 1) {
-      return `$${dollars.toFixed(2)}`;
-    }
-    if (dollars >= 0.01) {
-      return `$${dollars.toFixed(2)}`;
-    }
-    return `$${dollars.toFixed(4)}`;
-  };
+  const formatCost = (value: number) =>
+    formatMicroDollarsWithCurrency(value, currency, rates);
   const formatTokens = (value: number) =>
     value >= 1000 ? `${(value / 1000).toFixed(1)}k` : value.toString();
 
@@ -191,13 +182,29 @@ function RouteComponent() {
       <div className={overviewGrid}>
         <div className={statsCard}>
           <span className={statsCardLabel}>Total Cost</span>
-          <p className={statsCardValue}>{totalCost?.totalCostFormatted}</p>
+          <p className={statsCardValue}>
+            {formatMicroDollarsWithCurrency(
+              Number(totalCost?.totalCost ?? 0),
+              currency,
+              rates,
+            )}
+          </p>
           <div>
             <span className={statsCardSubvalue}>
-              Input: {totalCost?.totalInputCostFormatted}
+              Input:{' '}
+              {formatMicroDollarsWithCurrency(
+                Number(totalCost?.totalInputCost ?? 0),
+                currency,
+                rates,
+              )}
             </span>
             <span className={statsCardSubvalue}>
-              Output: {totalCost?.totalOutputCostFormatted}
+              Output:{' '}
+              {formatMicroDollarsWithCurrency(
+                Number(totalCost?.totalOutputCost ?? 0),
+                currency,
+                rates,
+              )}
             </span>
           </div>
         </div>

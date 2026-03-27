@@ -51,6 +51,9 @@ import {
 } from '../-components/observability.css';
 import { format } from 'date-fns';
 import clsx from 'clsx';
+import { useCurrency } from '@client/hooks/ui/useCurrency';
+import { useExchangeRates } from '@client/hooks/queries/useExchangeRates';
+import { formatMicroDollarsWithCurrency } from '@client/lib/currency';
 
 export const Route = createFileRoute(
   '/(app)/observability/_observability/requests'
@@ -84,22 +87,9 @@ const columnHelper = createColumnHelper<RequestRow>();
 
 const PAGE_SIZE = 10;
 
-// Convert micro-dollars to formatted string
-const formatCost = (microDollars: number) => {
-  const dollars = microDollars / 1_000_000;
-  if (dollars < 0.01) {
-    return `$${dollars.toFixed(4)}`;
-  }
-  return `$${dollars.toFixed(2)}`;
-};
-
-const formatCostFull = (microDollars: number) => {
-  const dollars = microDollars / 1_000_000;
-  if (dollars === 0) return '$0.000000';
-  return `$${dollars.toFixed(6)}`;
-};
-
 function RouteComponent() {
+  const { currency } = useCurrency();
+  const { data: rates } = useExchangeRates();
   const [offset, setOffset] = useState(0);
   const search = useSearch({ from: '/(app)/observability' });
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
@@ -229,21 +219,35 @@ function RouteComponent() {
       columnHelper.accessor('cacheSavings', {
         id: 'cacheSavings',
         header: 'Cache Savings',
-        cell: (info) => (
-          <Tooltip content={formatCostFull(info.getValue() ?? 0)}>
-            <span className={timestampCell}>
-              {formatCost(info.getValue() ?? 0)}
-            </span>
-          </Tooltip>
-        ),
+        cell: (info) => {
+          const micro = info.getValue() ?? 0;
+          const formatted = formatMicroDollarsWithCurrency(
+            micro,
+            currency,
+            rates,
+          );
+          return (
+            <Tooltip content={formatted}>
+              <span className={timestampCell}>{formatted}</span>
+            </Tooltip>
+          );
+        },
       }),
       columnHelper.accessor('cost', {
         header: 'Cost',
-        cell: (info) => (
-          <Tooltip content={formatCostFull(info.getValue())}>
-            <span className={timestampCell}>{formatCost(info.getValue())}</span>
-          </Tooltip>
-        ),
+        cell: (info) => {
+          const micro = info.getValue();
+          const formatted = formatMicroDollarsWithCurrency(
+            micro,
+            currency,
+            rates,
+          );
+          return (
+            <Tooltip content={formatted}>
+              <span className={timestampCell}>{formatted}</span>
+            </Tooltip>
+          );
+        },
       }),
       columnHelper.accessor('latencyMs', {
         id: 'latency',
@@ -253,7 +257,7 @@ function RouteComponent() {
         ),
       }),
     ],
-    [configNameMap]
+    [configNameMap, currency, rates]
   );
 
   const table = useReactTable({

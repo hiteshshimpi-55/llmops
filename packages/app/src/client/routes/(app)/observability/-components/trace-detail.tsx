@@ -2,12 +2,15 @@ import { useNavigate } from '@tanstack/react-router';
 import { Icon } from '@client/components/icons';
 import { X, ChevronRight, ChevronDown, Loader2 } from 'lucide-react';
 import { Button, Tooltip } from '@ui';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
   useTraceDetail,
   type SpanRow,
   type SpanEventRow,
 } from '@client/hooks/queries/useTraces';
+import { useExchangeRates } from '@client/hooks/queries/useExchangeRates';
+import { useCurrency } from '@client/hooks/ui/useCurrency';
+import { formatMicroDollarsWithCurrency } from '@client/lib/currency';
 import { statusBadge, statusSuccess, statusError } from './observability.css';
 import clsx from 'clsx';
 import { format } from 'date-fns';
@@ -107,19 +110,6 @@ const formatDuration = (ms: number | null) => {
   if (ms < 1) return '<1ms';
   if (ms < 1000) return `${Math.round(ms)}ms`;
   return `${(ms / 1000).toFixed(2)}s`;
-};
-
-const formatCost = (microDollars: number) => {
-  const dollars = microDollars / 1_000_000;
-  if (dollars === 0) return '$0.00';
-  if (dollars < 0.01) return `$${dollars.toFixed(4)}`;
-  return `$${dollars.toFixed(2)}`;
-};
-
-const formatCostFull = (microDollars: number) => {
-  const dollars = microDollars / 1_000_000;
-  if (dollars === 0) return '$0.000000';
-  return `$${dollars.toFixed(6)}`;
 };
 
 const SPAN_STATUS_MAP: Record<number, string> = {
@@ -297,9 +287,11 @@ function CollapsibleSection({
 function SpanDetailView({
   span,
   events,
+  formatMicroDollars,
 }: {
   span: SpanRow;
   events: SpanEventRow[];
+  formatMicroDollars: (microDollars: number) => string;
 }) {
   const spanStatus = SPAN_STATUS_MAP[span.status] ?? 'unset';
   const spanKind = SPAN_KIND_MAP[span.kind] ?? 'internal';
@@ -363,8 +355,10 @@ function SpanDetailView({
         {span.cost > 0 && (
           <div className={spanDetailMetaItem}>
             <span className={spanDetailMetaLabel}>Cost</span>
-            <Tooltip content={formatCostFull(span.cost)}>
-              <span className={spanDetailMetaValue}>{formatCost(span.cost)}</span>
+            <Tooltip content={formatMicroDollars(span.cost)}>
+              <span className={spanDetailMetaValue}>
+                {formatMicroDollars(span.cost)}
+              </span>
             </Tooltip>
           </div>
         )}
@@ -440,8 +434,16 @@ function SpanDetailView({
 
 export function TraceDetail({ traceId }: { traceId: string }) {
   const navigate = useNavigate();
+  const { currency } = useCurrency();
+  const { data: rates } = useExchangeRates();
   const { data, isLoading } = useTraceDetail(traceId);
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
+
+  const formatMicroDollars = useCallback(
+    (microDollars: number) =>
+      formatMicroDollarsWithCurrency(microDollars, currency, rates),
+    [currency, rates],
+  );
 
   const handleClose = () => {
     navigate({ to: '/observability/traces' });
@@ -549,8 +551,10 @@ export function TraceDetail({ traceId }: { traceId: string }) {
         </div>
         <div className={metricItem}>
           <span className={metricLabel}>Cost</span>
-          <Tooltip content={formatCostFull(trace.totalCost)}>
-            <span className={metricValue}>{formatCost(trace.totalCost)}</span>
+          <Tooltip content={formatMicroDollars(trace.totalCost)}>
+            <span className={metricValue}>
+              {formatMicroDollars(trace.totalCost)}
+            </span>
           </Tooltip>
         </div>
         <div className={metricItem}>
@@ -584,7 +588,11 @@ export function TraceDetail({ traceId }: { traceId: string }) {
 
         {/* Selected span detail */}
         {selectedSpan && (
-          <SpanDetailView span={selectedSpan} events={events} />
+          <SpanDetailView
+            span={selectedSpan}
+            events={events}
+            formatMicroDollars={formatMicroDollars}
+          />
         )}
       </div>
     </div>
